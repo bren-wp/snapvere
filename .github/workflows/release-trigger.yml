@@ -1,3 +1,4 @@
+# Final one-time dispatcher for Snapvera 1.0.0 after complete source/tools import.
 name: One-time v1.0.0 release dispatcher
 
 on:

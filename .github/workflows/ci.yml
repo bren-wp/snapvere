@@ -22,8 +22,12 @@ jobs:
         run: python3 tools/verify_release.py .
       - name: Unit tests
         run: go test ./internal/...
+      - name: Race tests
+        run: go test -race ./internal/...
       - name: gofmt check
         run: test -z "$(gofmt -l cmd internal)"
+      - name: go vet
+        run: go vet ./internal/...
 
   windows-native-x64:
     runs-on: windows-latest
@@ -33,20 +37,24 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
       - name: Build Windows x64 and ARM64 artifacts
         shell: pwsh
         run: ./tools/build_windows.ps1
-      - name: Windows x64 runtime self-test
+      - name: Windows x64 headless runtime self-test
         shell: pwsh
         run: |
           $v = (Get-Content VERSION -Raw).Trim()
-          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test
+          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test-headless
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify source and package release
+      - name: Package release artifacts
         shell: pwsh
-        run: |
-          python tools/verify_release.py .
-          python tools/package_release.py artifacts
+        run: python tools/package_release.py artifacts
+      - name: Verify PE security and installer payloads
+        shell: pwsh
+        run: python tools/verify_windows.py dist
       - uses: actions/upload-artifact@v4
         with:
           name: snapvera-windows

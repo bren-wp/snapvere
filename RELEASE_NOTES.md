@@ -18,6 +18,10 @@ Snapvera 1.0.0 je prva 1.x baza. Fokus ovog izdanja je konzistentna verzija, sta
 - installer transakcija koristi jedinstvene backup datoteke umjesto zajedničkog `.old` naziva
 - GitHub CI i Release workflowi dodani u source
 - release generira jednostavne primarne nazive `Snapvera-Setup.exe`, `Snapvera-Portable.exe` i `Snapvera-Source.zip` uz versionirane x64/ARM64 pakete
+- History cleanup sada se trajno zapisuje u indeks i pokriven je regression testom
+- PNG/JPEG spremanje koristi atomski temp/sync/replace postupak kako greška ne bi ostavila polovičnu datoteku
+- active-window capture koristi DWM Extended Frame Bounds za preciznije granice modernih Windows prozora
+- tray tooltip i notification tekst koriste sigurno NUL-terminiranje fiksnih Win32 UTF-16 buffera
 
 ## Funkcije uključene u 1.0.0
 

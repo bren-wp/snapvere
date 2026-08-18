@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/jpeg"
+	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +16,7 @@ import (
 	"unsafe"
 
 	"snapvera/internal/naming"
+	w "snapvera/internal/win"
 )
 
 var exportCounter uint64
@@ -107,21 +111,36 @@ func defaultVideoFile(mode string) string {
 	return uniqueOutputPath(filepath.Join(videoDir(), fileBase("video", mode)+".avi"))
 }
 
-func saveJPEG(c *Capture, path string, quality int) error {
-	if quality < 1 {
-		quality = 1
+func saveImageAtomic(c *Capture, path string, encode func(io.Writer, *image.RGBA) error) error {
+	if c == nil || c.Bits == nil || !validRect(Rect{W: c.W, H: c.Hh}) || c.Stride < c.W*4 {
+		return fmt.Errorf("invalid image buffer")
 	}
-	if quality > 100 {
-		quality = 100
+	dataSize := int64(c.Stride) * int64(c.Hh)
+	if dataSize <= 0 || dataSize > maxPixels*4 {
+		return fmt.Errorf("invalid image buffer size: %d", dataSize)
 	}
-	f, err := os.Create(path)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".snapvera-image-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	pix := unsafe.Slice((*byte)(c.Bits), int(c.Stride*c.Hh))
+	tmpName := tmp.Name()
+	committed := false
+	defer func() {
+		_ = tmp.Close()
+		if !committed {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	pix := unsafe.Slice((*byte)(c.Bits), int(dataSize))
 	for i := 0; i < len(pix); i += 4 {
 		pix[i], pix[i+2] = pix[i+2], pix[i]
+		// Screen-capture DIB alpha is not meaningful. Normalize it so PNG/JPEG
+		// encoders never interpret captured pixels as transparent.
 		pix[i+3] = 255
 	}
 	defer func() {
@@ -130,7 +149,44 @@ func saveJPEG(c *Capture, path string, quality int) error {
 		}
 	}()
 	img := &image.RGBA{Pix: pix, Stride: int(c.Stride), Rect: image.Rect(0, 0, int(c.W), int(c.Hh))}
-	return jpeg.Encode(f, img, &jpeg.Options{Quality: quality})
+	if err := encode(tmp, img); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	r, _, moveErr := w.ProcMoveFileExW.Call(
+		uintptr(unsafe.Pointer(w.UTF16(tmpName))),
+		uintptr(unsafe.Pointer(w.UTF16(path))),
+		w.MOVEFILE_REPLACE_EXISTING|w.MOVEFILE_WRITE_THROUGH,
+	)
+	if r == 0 {
+		return fmt.Errorf("replace image file: %w", moveErr)
+	}
+	committed = true
+	logf("save path=%s", path)
+	return nil
+}
+
+func savePNG(c *Capture, path string) error {
+	return saveImageAtomic(c, path, func(dst io.Writer, img *image.RGBA) error {
+		return png.Encode(dst, img)
+	})
+}
+
+func saveJPEG(c *Capture, path string, quality int) error {
+	if quality < 1 {
+		quality = 1
+	}
+	if quality > 100 {
+		quality = 100
+	}
+	return saveImageAtomic(c, path, func(dst io.Writer, img *image.RGBA) error {
+		return jpeg.Encode(dst, img, &jpeg.Options{Quality: quality})
+	})
 }
 func saveByPreset(c *Capture, path string) error {
 	ext := strings.ToLower(filepath.Ext(path))

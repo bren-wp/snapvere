@@ -13,6 +13,10 @@ Dodatni GitHub hardening prije javnog importa:
 - recorder stop je responzivniji tijekom frame-timinga
 - build skripte uvijek čiste privremene Setup payload datoteke, čak i kod greške
 - Bash Windows build sada vet-a i Windows-specifične internal pakete s odgovarajućim GOOS/GOARCH
+- History `RemoveMissing()` sada trajno zapisuje uklanjanje nestalih stavki umjesto samo privremenog filtriranja u memoriji
+- PNG/JPEG spremanje je atomsko: temp + Sync + `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)`
+- aktivni prozor koristi DWM Extended Frame Bounds prije `GetWindowRect` fallbacka
+- fiksni UTF-16 tray/notification bufferi uvijek ostaju NUL-terminirani i kod dugih prijevoda
 
 - centralizirana verzija i branding kroz `VERSION` + `internal/buildinfo`
 - stabilan single-instance mutex bez stare 0.x verzije u identitetu
@@ -53,7 +57,7 @@ Dodatni GitHub hardening prije javnog importa:
 ### Installer i sigurnost
 - Setup koristi transakcijsku zamjenu `Snapvera.exe + Uninstall.exe` s prethodnim stagingom i rollbackom
 - transakcijska logika izdvojena u `internal/installtx` i pokrivena unit testovima
-- Uninstaller više ne prihvaća bilo koju putanju koja samo sadrži riječ `snapvera`; cleanup je ograničen na `%LOCALAPPDATA%\\Programs\\Snapvera`
+- Uninstaller više ne prihvaća bilo koju putanju koja samo sadrži riječ `snapvera`; cleanup je ograničen na `%LOCALAPPDATA%\Programs\Snapvera`
 - privremeni uninstaller sada se stvara sigurnim `CreateTemp` postupkom umjesto predvidljivog PID naziva
 - spremanje postavki koristi jedinstvenu temp datoteku, `Sync` i Windows `MoveFileEx(...REPLACE_EXISTING|WRITE_THROUGH)`
 

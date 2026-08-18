@@ -1,0 +1,89 @@
+name: Publish GitHub Package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: snapvera-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release-bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify source and build Windows artifacts
+        shell: pwsh
+        run: |
+          python tools/verify_release.py .
+          go test ./internal/...
+          ./tools/build_windows.ps1
+          $v = (Get-Content VERSION -Raw).Trim()
+          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test-headless
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/package_release.py artifacts
+          python tools/verify_windows.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapvera-release-bundle
+          path: dist/
+          if-no-files-found: error
+
+  publish-ghcr:
+    needs: build-release-bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: snapvera-release-bundle
+          path: package-context/dist
+      - name: Resolve package metadata
+        id: meta
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$version" == "$GITHUB_REF_NAME" || -z "$version" ]]; then
+            version="1.0.0"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Create OCI release bundle
+        shell: bash
+        run: |
+          cat > package-context/Dockerfile <<'DOCKERFILE'
+          FROM scratch
+          ARG VERSION
+          LABEL org.opencontainers.image.title="Snapvera Release Bundle"
+          LABEL org.opencontainers.image.description="Snapvera Windows release artifacts, source archive and checksums"
+          LABEL org.opencontainers.image.vendor="Brendigo"
+          LABEL org.opencontainers.image.source="https://github.com/bren-wp/snapvere"
+          LABEL org.opencontainers.image.version="${VERSION}"
+          COPY dist/ /snapvera/
+          DOCKERFILE
+      - name: Login to GitHub Container Registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and publish package
+        shell: bash
+        run: |
+          image='${{ steps.meta.outputs.image }}'
+          version='${{ steps.meta.outputs.version }}'
+          docker build --build-arg VERSION="$version" -t "$image:$version" -t "$image:latest" package-context
+          docker push "$image:$version"
+          docker push "$image:latest"

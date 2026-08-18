@@ -1,0 +1,12 @@
+/dist/
+/cmd/setup/payload-app.exe
+/cmd/setup/payload-uninstall.exe
+*.tmp
+*.bak
+*.old
+SnapveraData/
+.DS_Store
+Thumbs.db
+
+__pycache__/
+*.pyc

@@ -1,4 +1,4 @@
-# Publish hardened Snapvera 1.0.0 source
+# Publish hardened Snapvera 1.0.0 source with a CI-safe headless runtime test.
 name: Release
 
 on:
@@ -65,11 +65,11 @@ jobs:
         shell: pwsh
         run: ./tools/build_windows.ps1
 
-      - name: Native Windows x64 runtime self-test
+      - name: Native Windows x64 headless runtime self-test
         shell: pwsh
         run: |
           $v = '${{ steps.version.outputs.value }}'
-          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test
+          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test-headless
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package release artifacts

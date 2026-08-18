@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Verify release source
+        run: python3 tools/verify_release.py .
+      - name: Unit tests
+        run: go test ./internal/...
+      - name: gofmt check
+        run: test -z "$(gofmt -l cmd internal)"
+
+  windows-native-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build Windows x64 and ARM64 artifacts
+        shell: pwsh
+        run: ./tools/build_windows.ps1
+      - name: Windows x64 runtime self-test
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify source and package release
+        shell: pwsh
+        run: |
+          python tools/verify_release.py .
+          python tools/package_release.py artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapvera-windows
+          path: dist/
+          if-no-files-found: error

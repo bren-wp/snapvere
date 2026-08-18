@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Verify tag matches VERSION
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match VERSION=$version"
+          }
+      - name: Verify source
+        shell: pwsh
+        run: |
+          python tools/verify_release.py .
+          go test ./internal/...
+      - name: Build Windows release
+        shell: pwsh
+        run: ./tools/build_windows.ps1
+      - name: Native x64 runtime self-test
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          & ".\dist\Snapvera-$v-windows-x64-portable.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package release
+        shell: pwsh
+        run: python tools/package_release.py artifacts
+      - name: Verify SHA256 manifest
+        shell: pwsh
+        run: |
+          Get-Content dist/SHA256SUMS.txt | ForEach-Object {
+            if ($_ -match '^([0-9a-f]{64})  (.+)$') {
+              $actual = (Get-FileHash -Algorithm SHA256 (Join-Path dist $Matches[2])).Hash.ToLower()
+              if ($actual -ne $Matches[1]) { throw "Hash mismatch: $($Matches[2])" }
+            }
+          }
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          gh release create "v$v" `
+            "dist/Snapvera-Setup.exe#Snapvera Setup (Windows x64)" `
+            "dist/Snapvera-Portable.exe#Snapvera Portable (Windows x64)" `
+            "dist/Snapvera-Source.zip#Source code" `
+            "dist/Snapvera-$v-windows-x64.exe" `
+            "dist/Snapvera-$v-windows-x64-setup.exe" `
+            "dist/Snapvera-$v-windows-x64-portable.exe" `
+            "dist/Snapvera-$v-windows-x64-uninstall.exe" `
+            "dist/Snapvera-$v-windows-x64-portable.zip" `
+            "dist/Snapvera-$v-windows-arm64.exe" `
+            "dist/Snapvera-$v-windows-arm64-setup.exe" `
+            "dist/Snapvera-$v-windows-arm64-portable.exe" `
+            "dist/Snapvera-$v-windows-arm64-uninstall.exe" `
+            "dist/Snapvera-$v-windows-arm64-portable.zip" `
+            "dist/Snapvera-$v-source.zip" `
+            "dist/Snapvera-$v-icons.zip" `
+            "dist/Snapvera-$v-DELIVERY.zip" `
+            "dist/SHA256SUMS.txt" `
+            "dist/SOURCE-MANIFEST-SHA256.txt" `
+            --title "Snapvera v$v" `
+            --notes-file RELEASE_NOTES.md `
+            --verify-tag
